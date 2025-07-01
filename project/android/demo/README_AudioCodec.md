@@ -326,24 +326,22 @@ MNN-3.2.0/project/android/demo/
 │   ├── export_funcodec_to_onnx.py        # 编码器转换脚本
 │   ├── export_funcodec_decoder_to_onnx.py # 解码器转换脚本
 │   └── test_mnn.py                       # PC端测试脚本
-├── app/src/main/
-│   ├── java/com/taobao/android/
-│   │   ├── mnndemo/
-│   │   │   └── AudioCodecActivity.java    # 主Activity（编码+解码）
-│   │   └── utils/
-│   │       ├── AudioFileReader.java       # 音频文件解析
-│   │       ├── AudioPlayer.java           # 音频播放和保存
-│   │       └── WavFileGenerator.java      # WAV文件生成
-│   ├── res/
-│   │   ├── layout/activity_audio_codec.xml # 界面布局（编码+解码UI）
-│   │   └── xml/file_paths.xml             # FileProvider配置
-│   └── assets/AudioCodec/
-│       ├── funcodec_encoder.mnn           # 编码器MNN模型
-│       ├── funcodec_decoder.mnn           # 解码器MNN模型
-│       └── example.wav                    # 示例音频
-└── resource/model/AudioCodec/
-    ├── funcodec_encoder.mnn              # 备用编码器位置
-    └── funcodec_decoder.mnn              # 备用解码器位置
+└── app/src/main/
+    ├── java/com/taobao/android/
+    │   ├── mnndemo/
+    │   │   └── AudioCodecActivity.java    # 主Activity（编码+解码）
+    │   └── utils/
+    │       ├── AudioFileReader.java       # 音频文件解析
+    │       ├── AudioPlayer.java           # 音频播放和保存
+    │       └── WavFileGenerator.java      # WAV文件生成
+    ├── res/
+    │   ├── layout/activity_audio_codec.xml # 界面布局（编码+解码UI）
+    │   └── xml/file_paths.xml             # FileProvider配置
+    └── assets/AudioCodec/
+        ├── funcodec_encoder.mnn           # 编码器MNN模型
+        ├── funcodec_decoder.mnn           # 解码器MNN模型
+        └── example.wav                    # 示例音频
+
 ```
 
 ---
@@ -367,7 +365,7 @@ MNN-3.2.0/project/android/demo/
 #### 步骤1：模型转换
 ```bash
 # 1. 下载MNN
-git clone https://github.com/alibaba/MNN.git
+git clone https://github.com/serikaP/MNN.git
 cd MNN/project/android/demo/funcodec
 
 # 2. 下载预训练模型
