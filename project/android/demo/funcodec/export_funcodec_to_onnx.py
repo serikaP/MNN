@@ -56,7 +56,7 @@ def build_codec(model_dir):
 
 class EncoderWrapper(torch.nn.Module):
     """
-    手动调用 codec 的组件完成 "wav → codes"：
+    调用 codec 的组件完成 "wav → codes"：
        waveform --(unsqueeze)--> (B,1,T)
                 --encoder--> latent
                 --quantizer--> codes
@@ -84,7 +84,7 @@ class EncoderWrapper(torch.nn.Module):
 
         out = self.quantizer(latent)
 
-        # -------- 提取 codes --------
+        # 提取 codes
         if isinstance(out, torch.Tensor):  # 只有 codes
             codes = out
         elif isinstance(out, (list, tuple)):
