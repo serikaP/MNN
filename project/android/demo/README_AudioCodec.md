@@ -37,7 +37,7 @@
 class EncoderWrapper(torch.nn.Module):
     """
     FunCodec编码器包装类
-    输入: waveform [B, 1, T] 或 [B, T]
+    输入: waveform [B, 1, T] 
     输出: codes [B, n_q, frames] (int32)
     """
     def __init__(self, codec):
@@ -49,7 +49,7 @@ class EncoderWrapper(torch.nn.Module):
     def forward(self, wav):
         # 音频预处理和编码
         if wav.dim() == 2:
-            wav = wav.unsqueeze(1)  # 确保 (B,1,T) 格式
+            wav = wav.unsqueeze(1)  # (B,1,T)
         
         # RMS音量归一化
         mono = wav.mean(dim=1, keepdim=True)
@@ -70,12 +70,12 @@ class EncoderWrapper(torch.nn.Module):
 #### 使用方法
 以 audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch 模型为例
 ```bash
-#进入工作目录
+# 进入工作目录
 cd funcodec
 mkdir exp && cd exp
-#下载模型
+# 下载模型
 git clone https://www.modelscope.cn/iic/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch.git
-#模型转换
+# 模型转换
 cd ..
 python export_funcodec_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_encoder.onnx --opset 14 --simplify
 
@@ -126,7 +126,7 @@ class DecoderWrapper(torch.nn.Module):
 #### 使用方法
 ```bash
 python export_funcodec_decoder_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_decoder.onnx --opset 14 --simplify --dummy_codes_path codecs.txt
-#codecs.txt用于验证模型正确性
+# codecs.txt用于验证模型正确性
 ```
 
 ---
@@ -140,11 +140,11 @@ python export_funcodec_decoder_to_onnx.py --model_dir exp/audio_codec-encodec-en
 
 ```bash
 pip install MNN
-#模型转换
+# 模型转换
 mnnconvert -f ONNX --modelFile funcodec_encoder.onnx --MNNModel funcodec_encoder.mnn --bizCode biz
 mnnconvert -f ONNX --modelFile funcodec_decoder.onnx --MNNModel funcodec_decoder.mnn --bizCode biz
 ```
-## 📱 Android AudioCodec功能
+## Android AudioCodec功能
 
 
 
@@ -254,35 +254,6 @@ float[] waveform = mDecoderOutputTensor.getFloatData();
 - **高质量重建**：基于FunCodec解码器的音频重构
 - **实时播放**：内置AudioTrack播放引擎
 
-#### 5. 用户交互界面
-
-**五个主要功能区域**：
-
-1. **编码区域**
-   - 音频导入和编码
-   - 实时性能显示
-   - 编码结果导出
-
-2. **解码区域**
-   - 编码文件导入
-   - 一键解码功能
-   - 解码性能监控
-
-3. **音频控制**
-   - 实时音频播放
-   - WAV文件保存
-   - 播放状态控制
-
-4. **文件管理**
-   - 多格式文件导入
-   - 安全文件分享
-   - 自动缓存清理
-
-5. **状态监控**
-   - 模型加载进度
-   - 处理过程状态
-   - 错误信息提示
-
 #### 5. 文件导入导出系统
 
 **导入功能**：
@@ -303,13 +274,7 @@ Intent shareIntent = new Intent(Intent.ACTION_SEND);
 shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
 ```
 
-### 性能特性
 
-#### 编码性能指标
-- **输入格式**：16kHz单声道浮点音频
-- **输出格式**：(n_q, B, frames)整数编码矩阵
-- **典型性能**：5秒音频 → 8.3秒编码时间（0.6x实时率）
-- **压缩比**：约20:1（80,000采样点 → 4,032编码值）
 
 #### 内存管理
 - **模型缓存**：首次加载后缓存复用
@@ -318,7 +283,7 @@ shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
 
 ---
 
-## 📁 项目文件结构
+## 项目文件结构
 
 ```
 MNN-3.2.0/project/android/demo/
@@ -346,7 +311,7 @@ MNN-3.2.0/project/android/demo/
 
 ---
 
-## 🚀 使用指南
+## 使用指南
 
 ### 环境准备
 1. **Python环境**（模型转换）
@@ -453,7 +418,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ### 测试环境
 - **设备**：Xiaomi MI 8
 - **模型**：audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch（转换后148MB）
-- **输入**：5秒16kHz单声道音频（80,000采样点）
+- **输入**：5.02秒16kHz单声道音频（80,000采样点）
 
 ### 性能结果
 
@@ -461,8 +426,8 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 === 性能指标 ===
 音频时长: 5.00 秒
-编码时间: 8322.30 ms
-实时率: 0.60x
+编码时间: 8019.15 ms
+实时率: 0.63x
 
 === 编码结果 ===
 输出形状: [32, 1, 126]
@@ -474,25 +439,19 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 #### 解码性能
 ```
 === 性能指标 ===
-解码时间: ~6500.00 ms
-音频时长: 5.00 秒
-实时率: ~0.77x
+解码时间: 24616.85 ms
+音频时长: 5.04 秒
+实时率: 0.20x
 
 === 解码结果 ===
 输入形状: [1, 32, 126]
-输出形状: [1, 1, 80000]
-音频样本数: 80000
-音频范围: [-0.8, 0.8]
-重建质量: 高保真音频重建
+输出形状: [1, 1, 80640]
+输出数据长度: 80640
 ```
 
-#### 端到端性能
-- **完整流水线时长**：编码(8.3s) + 解码(6.5s) = 14.8s
-- **音频质量**：接近原始音频，适合语音和音乐场景
-- **压缩效率**：20:1压缩比，显著减少存储空间
 ---
 
-## 🛠️ 技术细节
+## 技术细节
 
 ### 关键实现要点
 
@@ -535,7 +494,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
-## 📝 开发日志
+## 开发日志
 
 ### 主要里程碑
 
@@ -572,4 +531,3 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ---
 
-*本文档记录了FunCodec Android Demo的完整技术实现，包括模型转换、推理集成和应用开发的全流程。*
