@@ -34,6 +34,10 @@ def parse_args():
                         help='是否进行性能测试')
     parser.add_argument('--iterations', type=int, default=100,
                         help='性能测试迭代次数')
+    parser.add_argument('--save_codes', action='store_true',
+                        help='是否保存编码文件（Android兼容格式）')
+    parser.add_argument('--codes_output', default=None,
+                        help='编码文件输出路径（默认自动生成）')
     return parser.parse_args()
 
 
@@ -67,7 +71,40 @@ def load_audio(wav_path, target_sr=16000):
     return wav
 
 
-def test_mnn_model(mnn_path, wav_path, sample_rate=16000):
+def save_codes_android_format(codes_array, output_path, input_wav_path, inference_time, output_shape):
+    """
+    保存编码文件为Android应用兼容的格式
+    
+    Args:
+        codes_array: 编码数组
+        output_path: 输出文件路径
+        input_wav_path: 输入音频文件路径
+        inference_time: 推理时间（秒）
+        output_shape: 输出形状
+    """
+    timestamp = str(int(time.time() * 1000))
+    
+    with open(output_path, 'w') as f:
+        # 写入头部信息
+        f.write("# FunCodec 编码结果\n")
+        f.write(f"# 时间戳: {timestamp}\n")
+        f.write(f"# 输入文件: {input_wav_path}\n")
+        f.write(f"# 输出形状: {list(output_shape)}\n")
+        f.write(f"# 编码数量: {codes_array.size}\n")
+        f.write(f"# 推理时间: {inference_time * 1000:.2f} ms\n")
+        f.write("# 编码数据:\n")
+        
+        # 写入编码数据，每行一个值
+        flat_codes = codes_array.flatten()
+        for code in flat_codes:
+            f.write(f"{int(code)}\n")
+    
+    print(f"编码文件已保存到: {output_path}")
+    print(f"编码数量: {codes_array.size}")
+    print(f"文件格式: Android兼容格式")
+
+
+def test_mnn_model(mnn_path, wav_path, sample_rate=16000, save_codes=False, codes_output=None):
     """测试MNN模型的正确性"""
     print(f"加载MNN模型: {mnn_path}")
 
@@ -152,6 +189,24 @@ def test_mnn_model(mnn_path, wav_path, sample_rate=16000):
     print(f"输出形状: {result_array.shape}")
     print(f"输出数据类型: {result_array.dtype}")
     print(f"输出范围: [{result_array.min()}, {result_array.max()}]")
+    
+    # 计算实时率
+    audio_duration = len(wav_data) / sample_rate
+    real_time_ratio = audio_duration * 1000 / (inference_time * 1000)
+    print(f"音频时长: {audio_duration:.2f}s")
+    print(f"实时率: {real_time_ratio:.2f}x")
+    
+    # 保存编码文件（Android兼容格式）
+    if save_codes:
+        if codes_output is None:
+            # 自动生成输出文件名
+            base_name = os.path.splitext(os.path.basename(wav_path))[0]
+            timestamp = int(time.time() * 1000)
+            codes_output = f"codes_{base_name}_{timestamp}.txt"
+        
+        save_codes_android_format(result_array, codes_output, wav_path, inference_time, result_array.shape)
+    
+    # 保存详细结果文件
     output_filename = f"result_{os.path.splitext(os.path.basename(wav_path))[0]}.txt"
     with open(output_filename, 'w') as f:
         f.write(f"# MNN模型推理结果\n")
@@ -159,6 +214,8 @@ def test_mnn_model(mnn_path, wav_path, sample_rate=16000):
         f.write(f"# 输出形状: {result_array.shape}\n")
         f.write(f"# 数据类型: {result_array.dtype}\n")
         f.write(f"# 推理时间: {inference_time * 1000:.2f} ms\n")
+        f.write(f"# 音频时长: {audio_duration:.2f}s\n")
+        f.write(f"# 实时率: {real_time_ratio:.2f}x\n")
         f.write("# 结果数据:\n")
 
         if result_array.ndim == 1:
@@ -175,7 +232,8 @@ def test_mnn_model(mnn_path, wav_path, sample_rate=16000):
             for value in flat_array:
                 f.write(f"{value}\n")
 
-    print(f"结果已保存到: {output_filename}")
+    print(f"详细结果已保存到: {output_filename}")
+    
     # 打印部分输出值
     if result_array.size > 0:
         flat_result = result_array.flatten()
@@ -187,7 +245,9 @@ def test_mnn_model(mnn_path, wav_path, sample_rate=16000):
         'output': result_array,
         'inference_time': inference_time,
         'input_shape': input_data.shape,
-        'output_shape': result_array.shape
+        'output_shape': result_array.shape,
+        'audio_duration': audio_duration,
+        'real_time_ratio': real_time_ratio
     }
 
 
@@ -251,11 +311,12 @@ def main():
     args = parse_args()
 
     print("=" * 50)
-    print("FunCodec MNN模型测试")
+    print("FunCodec MNN编码器模型测试")
     print("=" * 50)
 
     # 基本正确性测试
-    result = test_mnn_model(args.mnn_path, args.wav_path, args.sample_rate)
+    result = test_mnn_model(args.mnn_path, args.wav_path, args.sample_rate, 
+                          args.save_codes, args.codes_output)
 
     if result is None:
         print("模型测试失败")
