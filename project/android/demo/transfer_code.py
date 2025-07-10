@@ -101,8 +101,8 @@ def extract_shape_from_comments(input_file):
 
 # 使用示例
 if __name__ == "__main__":
-    input_file = "audio_encoding_result_1751303719487.txt"
-    output_file = "converted_codecs.txt"
+    input_file = "android_encoding_result.txt"
+    output_file = "converted_android_codecs.txt"
 
     # 从输入文件中提取形状信息
     target_shape = extract_shape_from_comments(input_file)

@@ -26,43 +26,40 @@
 将FunCodec预训练模型转换为ONNX格式，为后续MNN转换做准备。
 
 #### 核心特性
-1. **模型包装**：提取编码器部分（waveform → codes）
-2. **音量归一化**：实现FunCodec的标准音频预处理
-3. **动态输入**：支持任意长度音频输入
-4. **格式验证**：确保转换正确性
+1. **SConv1d动态补丁**: 在不修改FunCodec源码的情况下，动态替换`SConv1d`的`forward`方法，绕开导致形状固化的`F.pad`操作。
+2. **模型包装**：`UltimateEncoderWrapper`类避免了所有可能导致ONNX固化的操作。
+3. **音量归一化**：实现FunCodec的标准音频预处理。
+4. **格式验证**：确保转换正确性，并验证ONNX模型支持动态输入。
 
 #### 主要组件
 
 ```python
-class EncoderWrapper(torch.nn.Module):
+class UltimateEncoderWrapper(torch.nn.Module):
     """
     FunCodec编码器包装类
     输入: waveform [B, 1, T] 
-    输出: codes [B, n_q, frames] (int32)
+    输出: codes [n_q, B, frames] (int32)
     """
     def __init__(self, codec):
         super().__init__()
-        self.codec = codec
-        self.encoder = codec.encoder      # SEANetEncoder
-        self.quantizer = codec.quantizer  # ResidualQuantizer
+        self.encoder = codec.encoder
+        self.quantizer = codec.quantizer
 
     def forward(self, wav):
-        # 音频预处理和编码
+        # 1. 音频预处理 (音量归一化)
         if wav.dim() == 2:
-            wav = wav.unsqueeze(1)  # (B,1,T)
-        
-        # RMS音量归一化
+            wav = wav.unsqueeze(1)
         mono = wav.mean(dim=1, keepdim=True)
         scale = torch.sqrt(mono.pow(2).mean(dim=2, keepdim=True) + 1e-8)
         wav_norm = wav / scale
         
-        # 编码过程
+        # 2. 编码与量化
         latent = self.encoder(wav_norm)
-        codes = self.quantizer(latent)
         
-        # 处理输出格式
-        if isinstance(codes, (list, tuple)):
-            codes = torch.stack(codes, dim=1)
+        # 3. 提取codes并塑形
+        # FunCodec量化器内部逻辑复杂，最终提取并整理为 [n_q, B, T] 格式以方便Android端按层切片
+        out = self.quantizer(latent, 16000, None) 
+        codes = out.codes # quantizer.codes is (n_q, B, T)
         
         return codes.to(torch.int32)
 ```
@@ -77,7 +74,7 @@ mkdir exp && cd exp
 git clone https://www.modelscope.cn/iic/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch.git
 # 模型转换
 cd ..
-python export_funcodec_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_encoder.onnx --opset 14 --simplify
+python export_funcodec_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_encoder.onnx --opset 14
 
 ```
 
@@ -91,18 +88,18 @@ python export_funcodec_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritt
 ### export_funcodec_decoder_to_onnx.py
 
 #### 脚本功能
-将FunCodec解码器转换为ONNX格式，实现编码到音频的逆向转换。
+将FunCodec解码器转换为ONNX格式，增加维度处理以匹配不同量化器层数的编码**。
 
 #### 核心特性
 1. **解码器包装**：提取解码器部分（codes → waveform）
-2. **反量化处理**：将量化编码恢复为连续特征
+2. **维度适配**：在`forward`中增加`.permute()`操作，以正确处理输入张量。
 3. **动态输入**：支持任意长度编码输入
 4. **音频重建**：高质量的音频信号重构
 
 #### 主要组件
 
 ```python
-class DecoderWrapper(torch.nn.Module):
+class DecoderWrapper(nn.Module):
     """
     FunCodec解码器包装类
     输入: codes [B, n_q, frames] (int32)
@@ -110,14 +107,19 @@ class DecoderWrapper(torch.nn.Module):
     """
     def __init__(self, codec):
         super().__init__()
-        self.decoder = codec.decoder      # SEANetDecoder
-        self.quantizer = codec.quantizer  # ResidualQuantizer
+        self.decoder = codec.decoder
+        self.quantizer = codec.quantizer
 
     def forward(self, codes):
-        # 反量化：codes -> latent
-        latent = self.quantizer.decode(codes)
+        # FunCodec的quantizer.decode需要(n_q, B, T)格式的输入
+        # ONNX模型接收(B, n_q, T)格式，因此需要转置
+        codes_transposed = codes.permute(1, 0, 2)
         
-        # 解码：latent -> waveform
+        # 反量化: codes -> latent
+        # self.quantizer.decode输出(B, T, C), permute后为(B, C, T)
+        latent = self.quantizer.decode(codes_transposed).permute(0, 2, 1)
+        
+        # 解码: latent -> waveform
         waveform = self.decoder(latent)
         
         return waveform
@@ -125,7 +127,7 @@ class DecoderWrapper(torch.nn.Module):
 
 #### 使用方法
 ```bash
-python export_funcodec_decoder_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_decoder.onnx --opset 14 --simplify --dummy_codes_path codecs.txt
+python export_funcodec_decoder_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_decoder.onnx --opset 14 --dummy_codes_path codecs.txt
 # codecs.txt用于验证模型正确性
 ```
 
@@ -275,6 +277,38 @@ shareIntent.putExtra(Intent.EXTRA_STREAM, fileUri);
 ```
 
 
+#### 6. 动态量化层选择与处理
+
+**背景**:
+MNN Interpreter API不支持依赖于输入数值的动态形状（例如，将`n_q`作为输入来动态改变模型结构），这限制了在模型内部实现动态量化层数的功能。
+
+**解决方案**:
+将动态逻辑移至应用层，在Java代码中实现。
+- **编码**: 模型始终对全部32个量化层进行完整编码。
+- **切片**: 编码完成后，根据用户通过`SeekBar`选择的层数（1-32），在应用层对完整的编码结果进行切片，只保留所需层数的数据。
+- **解码**: 解码时，如果导入的编码层数少于解码器期望的32层，应用层会自动用0填充至32层，以兼容固定的解码器模型。
+
+**优势**:
+- **绕开引擎限制**: 完美规避了MNN的动态形状限制。
+- **单一模型**: 无需为每个层数生成单独的模型，极大简化了模型管理和部署。
+- **灵活控制**: 用户可以实时、动态地控制压缩码率与音频质量的平衡。
+
+```java
+// AudioCodecActivity.java中的核心切片逻辑
+// 1. 获取完整的32层编码结果
+AudioEncodeResult result = performAudioEncode(); 
+
+// 2. 根据用户选择的层数(mSelectedQuantizerLayers)进行切片
+int[] fullCodes = result.codes;
+int[] fullShape = result.outputShape; // e.g., [32, 1, 126]
+// ...
+int[] selectedCodes = new int[mSelectedQuantizerLayers * batch * frames];
+System.arraycopy(fullCodes, 0, selectedCodes, 0, selectedCodes.length);
+int[] selectedShape = {mSelectedQuantizerLayers, batch, frames};
+
+// 3. 使用切片后的数据进行保存和显示
+saveEncodingResults(selectedCodes, selectedShape);
+```
 
 #### 内存管理
 - **模型缓存**：首次加载后缓存复用
@@ -339,10 +373,10 @@ git clone https://www.modelscope.cn/iic/audio_codec-encodec-en-libritts-16k-nq32
 cd ..
 
 # 3. 转换编码器为ONNX
-python export_funcodec_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_encoder.onnx --opset 14 --simplify
+python export_funcodec_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_encoder.onnx --opset 14
 
 # 解码器转换
-python export_funcodec_decoder_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_decoder.onnx --opset 14 --simplify --dummy_codes_path codecs.txt
+python export_funcodec_decoder_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_decoder.onnx --opset 14 --dummy_codes_path codecs.txt
 
 # 4. 转换为MNN格式
 pip install MNN
@@ -357,13 +391,13 @@ mnnconvert -f ONNX --modelFile funcodec_decoder.onnx --MNNModel funcodec_decoder
 python test_mnn.py --mnn_path funcodec_encoder.mnn --wav_path example.wav
 
 # 5. 复制到Android项目
-cp funcodec_encoder.mnn ../app/src/main/assets/AudioCodec/
-cp funcodec_decoder.mnn ../app/src/main/assets/AudioCodec/
+cp funcodec_encoder.mnn ../../../../resource/model/AudioCodec/
+cp funcodec_decoder.mnn ../../../../resource/model/AudioCodec/
 ```
 
 #### 步骤2：编译Android应用
 ```bash
-cd MNN-3.2.0/project/android/demo
+cd MNN/project/android/demo
 ./gradlew assembleDebug
 ```
 
@@ -372,6 +406,14 @@ cd MNN-3.2.0/project/android/demo
 adb install app/build/outputs/apk/debug/app-debug.apk
 ```
 
+**应用内操作**:
+- **编码**:
+  - 点击“导入WAV”选择一个音频文件。
+  - 拖动 **“量化器层数”** 滑块选择希望编码的层数（1-32）。层数越低，压缩率越高（码率越低），但音质也会相应下降。
+  - 点击“开始编码”按钮。
+- **解码**:
+  - 点击“导入编码”选择一个之前生成的编码结果文件。
+  - 点击“开始解码”按钮。解码后的音频可以通过“播放音频”和“保存音频”按钮进行操作。
 
 
 ---
@@ -388,28 +430,32 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 #### 编码性能
 ```
 === 性能指标 ===
-音频时长: 5.00 秒
-编码时间: 8019.15 ms
-实时率: 0.63x
+音频时长: 5.02 秒
+编码时间: 13495.09 ms
+实时率: 0.37x
 
 === 编码结果 ===
 输出形状: [32, 1, 126]
 编码数量: 4032
-编码范围: [0, 1023]
-压缩比: 19.8:1
+压缩比: 19.9:1
+量化器层数：32
 ```
+
+**注**：以上为使用全部32层量化器时的性能。应用支持选择1-32层，较低的层数会显著降低最终编码文件的码率（如16层时码率减半），但**编码推理时间基本不变**，因为应用总是先计算全部32层再进行切片。
 
 #### 解码性能
 ```
 === 性能指标 ===
-解码时间: 24616.85 ms
+解码时间: 27429.80 ms
 音频时长: 5.04 秒
-实时率: 0.20x
+实时率: 0.18x
 
 === 解码结果 ===
 输入形状: [1, 32, 126]
+输入码率：8.0 kbps
 输出形状: [1, 1, 80640]
-输出数据长度: 80640
+输出码率（PCM）:256 kbps
+量化器层数：32
 ```
 
 ---
@@ -418,9 +464,9 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ### 常见问题排查
 
 1. **模型加载失败**
-   - 检查文件完整性（148MB+）
-   - 验证MNN格式正确性
-   - 查看logcat详细错误信息
+   - 检查文件完整性，验证MNN格式正确性
+   - assets不支持复制大文件
+   - 复用MNN DEMO原本的模型加载方式
 
 2. **推理崩溃**
    - 确保调用session.reshape()
@@ -430,8 +476,21 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 3. **音频导入失败**
    - 确认WAV格式支持（16/24/32位PCM）
    - 检查文件读取权限
-   - 查看AudioFileReader日志
 
+4. **音频质量差**
+   - 排查问题发现是解码时java层reshape操作不当
+   - 添加transpose方法，用于对一维数组表示的3D张量进行维度转置
+   - 将转置后的mCodesData和正确的形状 [1, 32, frames] 传递给MNN解码器
+
+5. **输出形状固化**
+    - `SConv1d.forward` 在处理非因果padding时，其依赖的 F.pad 不支持动态padding尺寸，且内部逻辑使用了`math.ceil`和Python原生if判断，导致ONNX追踪时尺寸被固化。
+    - 在不修改FunCodec源码的情况下，尝试动态替换(猴子补丁)编码器核心模块 SConv1d 的 forward 方法。
+    - 重写 forward 方法，用 torch.cat 手动实现动态padding，绕开 F.pad 的限制。
+
+6. **MNN Interpreter API不支持数值依赖的动态形状**
+   - 若将量化器层数n_q作为模型输入，则安卓端MNN Interpreter API会报错并崩溃
+   - 编码过程依然会使用全部32层来获取完整的编码数据，将模型的动态逻辑移到应用层处理，编码完成后根据选择的量化器层数从完整的编码数据中提取出相应的部分
+   - 在 `AudioCodecActivity.java` 的 `performAudioDecode` 方法中，增加了一个预处理步骤。在将编码送入解码器前，检查其实际层数。如果层数小于32，则自动用0填充，补足到32层。这确保了解码器模型永远接收到符合其预期的 `[B, 32, T]` 形状的张量，从而解决了崩溃问题。
 
 ---
 
@@ -455,6 +514,14 @@ adb install app/build/outputs/apk/debug/app-debug.apk
    - 成功添加FunCodec解码器支持
    - 实现完整的编码-解码流水线
    - 集成音频播放和保存功能
+
+5. **修复程序存在的问题**
+    - 解决音频质量差与输出形状固化问题
+
+5. **动态量化层支持**
+   - 增加了在UI上选择量化器层数（1-32）的功能。
+   - 通过“固定编码、应用层切片”的策略，绕开了MNN引擎的动态形状限制。
+   - 解码器端增加了自动填充逻辑，以兼容不同层数的编码输入。
 
 ---
 
