@@ -22,6 +22,7 @@
         <item>ImageMode</item>
         <item>Portrait</item>
         <item>OpenGLTest</item>
+        <item>AudioCodec</item>
     </string-array>
 
 
