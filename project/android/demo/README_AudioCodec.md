@@ -391,14 +391,21 @@ mnnconvert -f ONNX --modelFile funcodec_decoder.onnx --MNNModel funcodec_decoder
 python test_mnn.py --mnn_path funcodec_encoder.mnn --wav_path example.wav
 
 # 5. 复制到Android项目
-cp funcodec_encoder.mnn ../../../../resource/model/AudioCodec/
-cp funcodec_decoder.mnn ../../../../resource/model/AudioCodec/
+cd ../../../../resource
+# 前提是MNN Demo中的模型也要复制进去，详见README.md
+mkdir AudioCodec
+cp funcodec_encoder.mnn AudioCodec/
+cp funcodec_decoder.mnn AudioCodec/
 ```
 
 #### 步骤2：编译Android应用
 ```bash
 cd MNN/project/android/demo
 ./gradlew assembleDebug
+# 使用Android Stuidio编译
+# jdk 21.0.4 
+# Android Gradle Plugin Version 8.7.3
+# Gradle Version 8.10
 ```
 
 #### 步骤3：安装测试
