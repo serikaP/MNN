@@ -424,7 +424,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 
 ### 测试环境
 - **设备**：Xiaomi MI 8
-- **模型**：audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch（转换后148MB）
+- **模型**：audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch
 - **输入**：5.02秒16kHz单声道音频（80,000采样点）
 
 ### 性能结果
@@ -459,7 +459,41 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 输出码率（PCM）:256 kbps
 量化器层数：32
 ```
+### 测试环境
+- **设备**：Infinix NOTE 50 Pro+
+- **模型**：audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch
+- **输入**：5.02秒16kHz单声道音频（80,000采样点）
 
+### 性能结果
+
+#### 编码性能
+```
+=== 性能指标 ===
+音频时长: 5.02 秒
+编码时间: 10248.77 ms
+实时率: 0.49x
+
+=== 编码结果 ===
+输出形状: [32, 1, 126]
+编码数量: 4032
+压缩比: 19.9:1
+量化器层数：32
+```
+
+#### 解码性能
+```
+=== 性能指标 ===
+解码时间: 10524.32 ms
+音频时长: 5.04 秒
+实时率: 0.48x
+
+=== 解码结果 ===
+输入形状: [1, 32, 126]
+输入码率：8.0 kbps
+输出形状: [1, 1, 80640]
+输出码率（PCM）:256 kbps
+量化器层数：32
+```
 ---
 
 
