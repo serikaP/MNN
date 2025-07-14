@@ -6,7 +6,7 @@
 
 ### 核心功能
 - **FunCodec模型转换**：将预训练模型的编码器和解码器分别转换为ONNX格式，再转换为MNN格式
-- **Android推理**：基于MNN引擎的实时音频编码和解码
+- **Android推理**：基于MNN引擎的音频编码和解码
 - **完整音频流水线**：音频导入 → 编码 → 导出编码 → 导入编码 → 解码 → 播放/保存音频
 - **用户界面**：完整的Android应用，支持全流程音频处理功能
 
@@ -46,20 +46,19 @@ class UltimateEncoderWrapper(torch.nn.Module):
         self.quantizer = codec.quantizer
 
     def forward(self, wav):
-        # 1. 音频预处理 (音量归一化)
+        # 音频预处理 (音量归一化)
         if wav.dim() == 2:
             wav = wav.unsqueeze(1)
         mono = wav.mean(dim=1, keepdim=True)
         scale = torch.sqrt(mono.pow(2).mean(dim=2, keepdim=True) + 1e-8)
         wav_norm = wav / scale
         
-        # 2. 编码与量化
+        # 编码与量化
         latent = self.encoder(wav_norm)
         
-        # 3. 提取codes并塑形
-        # FunCodec量化器内部逻辑复杂，最终提取并整理为 [n_q, B, T] 格式以方便Android端按层切片
+        # 提取codes整理为 [n_q, B, T]
         out = self.quantizer(latent, 16000, None) 
-        codes = out.codes # quantizer.codes is (n_q, B, T)
+        codes = out.codes # quantizer.codes  (n_q, B, T)
         
         return codes.to(torch.int32)
 ```
@@ -83,7 +82,6 @@ python export_funcodec_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritt
 2. **编码器提取**：包装为独立的编码器模块
 3. **ONNX导出**：支持动态输入形状
 4. **正确性验证**：对比PyTorch和ONNX输出
-5. **可选简化**：使用onnxsim优化计算图
 
 ### export_funcodec_decoder_to_onnx.py
 
@@ -128,7 +126,7 @@ class DecoderWrapper(nn.Module):
 #### 使用方法
 ```bash
 python export_funcodec_decoder_to_onnx.py --model_dir exp/audio_codec-encodec-en-libritts-16k-nq32ds640-pytorch --onnx_path funcodec_decoder.onnx --opset 14 --dummy_codes_path codecs.txt
-# codecs.txt用于验证模型正确性
+# （可选）codecs.txt用于验证模型正确性
 ```
 
 ---
@@ -156,10 +154,8 @@ mnnconvert -f ONNX --modelFile funcodec_decoder.onnx --MNNModel funcodec_decoder
 
 **特点**：
 - **双模型管理**：同时加载编码器和解码器模型
-- **多级回退策略**：Assets → 外部存储 → 缓存复用
 - **大文件处理**：支持148MB+模型文件
 - **完整性验证**：文件大小和可读性检查
-- **容错机制**：单个模型失败不影响另一个模型的使用
 
 ```java
 private String prepareModel() {
@@ -253,7 +249,6 @@ float[] waveform = mDecoderOutputTensor.getFloatData();
 **解码特性**：
 - **编码文件解析**：自动解析文本格式的编码文件
 - **格式验证**：确保编码数据符合[32, 1, frames]格式
-- **高质量重建**：基于FunCodec解码器的音频重构
 - **实时播放**：内置AudioTrack播放引擎
 
 #### 5. 文件导入导出系统
@@ -289,8 +284,8 @@ MNN Interpreter API不支持依赖于输入数值的动态形状（例如，将`
 - **解码**: 解码时，如果导入的编码层数少于解码器期望的32层，应用层会自动用0填充至32层，以兼容固定的解码器模型。
 
 **优势**:
-- **绕开引擎限制**: 完美规避了MNN的动态形状限制。
-- **单一模型**: 无需为每个层数生成单独的模型，极大简化了模型管理和部署。
+- **绕开引擎限制**: 规避了MNN的动态形状限制。
+- **单一模型**: 无需为每个层数生成单独的模型，简化了模型管理和部署。
 - **灵活控制**: 用户可以实时、动态地控制压缩码率与音频质量的平衡。
 
 ```java
@@ -468,7 +463,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 ---
 
 
-### 常见问题排查
+### 问题排查
 
 1. **模型加载失败**
    - 检查文件完整性，验证MNN格式正确性
@@ -476,7 +471,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
    - 复用MNN DEMO原本的模型加载方式
 
 2. **推理崩溃**
-   - 确保调用session.reshape()
+   - 调用session.reshape()
    - 检查输入数据格式（float32）
    - 验证tensor形状匹配
 
@@ -525,7 +520,7 @@ adb install app/build/outputs/apk/debug/app-debug.apk
 5. **修复程序存在的问题**
     - 解决音频质量差与输出形状固化问题
 
-5. **动态量化层支持**
+6. **动态量化层支持**
    - 增加了在UI上选择量化器层数（1-32）的功能。
    - 通过“固定编码、应用层切片”的策略，绕开了MNN引擎的动态形状限制。
    - 解码器端增加了自动填充逻辑，以兼容不同层数的编码输入。
