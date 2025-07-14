@@ -469,6 +469,9 @@ public class VideoActivity extends AppCompatActivity implements AdapterView.OnIt
             } else if (i == 3) {
                 Intent intent = new Intent(VideoActivity.this, OpenGLTestActivity.class);
                 startActivity(intent);
+            } else if (i == 4) {
+                Intent intent = new Intent(VideoActivity.this, AudioCodecActivity.class);
+                startActivity(intent);
             }
         }
 
